@@ -1,0 +1,269 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+source("../src/header.r")
+manage_packages()
+
+INPUT = function(x="") { file.path(SCRIPTS(), "../models/Sentence_Based/", x) }
+
+
+read_model_prediction = function(x){
+	x = match.arg(x, c("train", "test", "forecast"))
+	
+	data = read_excel(INPUT( "stage_2_results_" %+% x %+% ".xlsx" ))
+	
+	return( data %>% select(-names(data)[1] ) )
+}
+
+version = "0.1.0"
+last_date = as.Date("2020-07-08")
+
+```
+
+```{r}
+	covid19_confirmed = read_csv("../data/time_series_covid19_confirmed_global.csv")
+	covid19_deaths = read_csv("../data/time_series_covid19_deaths_global.csv")
+	covid19_recovered = read_csv("../data/time_series_covid19_recovered_global.csv")
+	
+	proc_covid = function(x, name){
+		tmp = x %>% filter(`Country/Region`=="China") %>% select(-`Province/State`, -`Country/Region`, -Lat, -Long) %>% summarize_all(sum) %>% t
+		df = tibble(v1 = as_date( parse_date_time( rownames(tmp) , "mdy")) , v2 = tmp[,1]) 
+		names(df) = c("date", name)
+		df
+	}
+	
+	df_covid = 
+		left_join(
+			proc_covid(covid19_confirmed, "confirmed"),
+			proc_covid(covid19_deaths, "deaths")
+		) %>%
+			left_join(
+				proc_covid(covid19_recovered, "recovered"),
+			) %>% 
+		mutate(still_infected = confirmed - deaths - recovered)
+	
+```
+
+
+```{r}
+df = 
+	foreach (i = c("train", "test", "forecast"), .combine = c ) %do%{
+		out = list(read_model_prediction(i))
+		names(out) = i 
+		out
+	}
+
+SARS_data = read_excel("../data/SARS_Data.xlsx")
+SARS_data = SARS_data %>% select("Date", "Still infected") %>% rename(still_infected = `Still infected`) %>% mutate(date=as_date(Date, format="%b %d %Y") )
+
+```
+
+
+```{r}
+	min_max_date = SARS_data%>% dplyr::summarize(min_date = min(date) , max_date=max(date))
+	df_date = tibble(date = seq(min_max_date$min_date , min_max_date$max_date, by="1 day") )
+	
+	SARS_data = df_date %>% left_join(SARS_data)
+	
+	SARS_data = 
+		SARS_data %>% arrange(date) %>% mutate(
+			still_infected = ifelse(
+				is.na(still_infected) & is.na(lead(still_infected)) , 
+				 lag(still_infected) + (lead(still_infected,2) -lag(still_infected))/3 ,  
+				still_infected )
+		)
+	
+	SARS_data = 
+		SARS_data %>% arrange(date) %>% mutate(
+			still_infected = ifelse(
+				is.na(still_infected) , 
+				 lag(still_infected) + (lead(still_infected) -lag(still_infected))/2 ,  
+				still_infected )
+		)
+	expect_true(all(!is.na(SARS_data$still_infected)))
+
+	SARS_data = SARS_data %>% filter(date >= as_date("2003-04-10"))
+	
+```
+
+```{r}
+ma <- function(x, n = 7){
+	out = stats::filter(x, rep(1 / n, n), sides = 1)
+	out[1] = x[1]
+	for (i in 2:(n-1)){
+		out[i] = (stats::filter(x[1:(n-1)], rep(1 / i, i), sides = 1))[i]
+	}	
+	out
+}
+
+results = 
+	foreach(i = df, j = names(df), .combine=c) %do% {
+		
+		max_index = SARS_data %>% dplyr::summarize(max = max(still_infected)) %>% pull
+		
+		
+		x = i %>% mutate(pred_date = as_date("2003-04-03") +round(pred) ) %>% mutate(date=as_date(date))
+	
+		x = x %>% left_join(SARS_data, by=c("pred_date"="date") ) %>% 
+			group_by(date) %>% 
+			dplyr::summarize(still_infected = mean(still_infected, na.rm=TRUE) )  %>% 
+			mutate(ma_still_infected = ma(still_infected,7))
+		
+		out = x %>% mutate(still_infected_norm = still_infected/max_index, ma_still_infected_norm=ma_still_infected/max_index) 
+		
+		out = list(out)
+		names(out) = j
+		out
+	}
+
+
+foreach(x = results, j = names(results)) %do% {
+	
+
+	if (j %in% c("train", "test")){
+
+		out = x %>% ggplot(aes(x=date, y= still_infected)) +
+			ggtitle(j) + geom_point() + geom_line()
+
+		out = out + geom_line(data = SARS_data, aes(x=date, y=still_infected), color="blue")
+	}
+	
+	
+	if (j %in% c("forecast")){
+		a = 0.62
+		b = 300000
+	
+		out = x %>% ggplot(aes(x=date, y= still_infected_norm)) +
+			ggtitle(j) + geom_point() + geom_line()
+
+		out = out + geom_line(data = df_covid, aes(x=date, y=still_infected/b+a), color="blue") + 
+			scale_y_continuous(sec.axis = sec_axis(~(.-a)*b, name = "Official numers", breaks = seq(0,50000,10000) , labels=scales::comma  ))
+	}
+    
+	out
+}
+
+```
+
+
+```{r}
+
+covid_event <- function(vertical_position = 1) {
+    
+    out = list()
+    font_size =3
+    font_size2 =2.5
+    text_delta = 1
+    text_drop = 0.019
+
+    add_bar <- function(highlight, date){
+    	geom_vline(xintercept=as.Date(date), linetype = "solid", col=ifelse(highlight==1, "mediumspringgreen", "grey80"), size = 1)
+    }
+
+    add_text <- function(highlight, date, label, v_adj){
+    	annotate("text", x = as.Date(date)+text_delta, y = vertical_position*v_adj, hjust = 0,
+                 label = label,  color =  ifelse(highlight==1, "red" , "black"), size = ifelse(highlight==1, font_size , font_size2))
+    }
+
+    out = c(out, add_bar(0, '2020-01-23'))
+    out = c(out, add_bar(0, '2020-02-10'))
+    out = c(out, add_bar(0, '2020-02-13'))
+    out = c(out, add_bar(0, '2020-04-08'))
+    out = c(out, add_bar(0, '2020-04-17'))
+    out = c(out, add_bar(0, '2020-04-30'))
+    out = c(out, add_bar(0, '2020-06-11'))
+
+    out = c(out, add_text(0, '2020-01-23', "1/23: Wuhan lockdown", 1))
+    out = c(out, add_text(0, '2020-02-10', "2/10: Beijing (partial) loackdown", 1-text_drop))
+    out = c(out, add_text(0, '2020-02-13', "2/13: Official numbers revised", 1-2*text_drop))
+    out = c(out, add_text(0, '2020-04-08', "4/8: Wuhan lockdown lifted", 1-2*text_drop))
+    out = c(out, add_text(0, '2020-04-17', "4/17: Official numbers revised again", 1-3*text_drop))
+    out = c(out, add_text(0, '2020-04-30', "4/30: Beijing lockdown lifted", 1-4*text_drop))
+    out = c(out, add_text(0, '2020-06-11', "6/11: Second\noutbreak in Beijing", 1-5.5*text_drop))
+    
+    out
+}
+
+foreach(x = results, j = names(results)) %do% {
+	
+	
+	if (j %in% c("train", "test")){
+
+		out = x %>% ggplot(aes(x=date, y= ma_still_infected)) +
+			ggtitle(j) + geom_point() + geom_line()
+
+		out = out + geom_line(data = SARS_data, aes(x=date, y=still_infected), color="blue")
+	}
+	
+	
+	if (j %in% c("forecast")){
+		a = 0.55
+		b = 240000
+	
+		out = x %>% filter(date <= last_date) %>%
+		    
+		ggplot(aes(x=date)) +
+
+		covid_event(vertical_position=0.85) +
+
+		geom_line(aes(y= ma_still_infected_norm, color="PCI-Outbreak"), size=1 ) +
+		geom_line(data=df_covid, aes(x=date, y=still_infected/b+a, color="Still infected cases (official)"), size=1) + 
+
+		scale_x_date(			
+            breaks = seq.Date(as.Date("2020-02-01"), last_date, by="1 month"), 
+            labels = date_format("%b %Y"), 
+            limits= c(as.Date("2020-01-21")-6, last_date+6),
+            expand = c(0, 0)
+			) + 
+		xlab("") +
+
+		scale_y_continuous(name = "PCI-Outbreak", breaks = seq(0,1,0.05), limits=c(0.54, 0.86),
+			sec.axis = sec_axis(~(.-a)*b, name = "Still infected", breaks = seq(0,70000,10000) , labels = scales::comma)) + 
+
+		scale_colour_manual(values = c("blue", "red")) +
+
+		theme_bw() +
+		theme(
+			axis.title.x=element_blank(),
+			legend.title = element_blank(),
+			legend.position = "bottom",
+			legend.background=element_blank(),
+			panel.grid.minor=element_blank(),
+			panel.grid.major=element_blank()
+			# axis.title.y.left = element_text(colour = "red"),
+			# axis.title.y.right = element_text(color = "blue")
+			) + 
+		guides(color = guide_legend(reverse = FALSE))
+
+    	ww = 6.75
+    	ggsave("../results/pci-outbreak.png", plot = out, width=ww, height=(2/3)*ww)
+    	
+    	note = expression(paste("Source: ", italic("Policy Change Index"), ", https://policychangeindex.org/"))
+    	                        
+    	out2 = out +
+    	    labs(title = "Policy Change Index for Outbreak and official COVID cases in China",
+    	         caption = note) +
+    	    coord_cartesian(clip = "off") +
+    	    theme(plot.title = element_text(hjust = 0.5, margin=margin(t=3, b=12)),
+    	          plot.caption=element_text(size=9, hjust=0, margin=margin(t=9, b=3)))
+    	ggsave("../results/pci-outbreak_w_caption.png", plot = out2, width=ww, height=(3/4)*ww)
+
+	}
+	
+	out
+}
+```
+
+
+```{r}
+	PCI_outbreak = results$forecast %>% select(date, PCI_outbreak = still_infected_norm) 
+	export_excel(PCI_outbreak, paste0("../results/PCI-Outbreak_v",version,"_",as.character(last_date),".xlsx"), sheetname = "PCI-Outbrekk")
+```
+
+
+
