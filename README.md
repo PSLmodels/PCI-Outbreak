@@ -4,13 +4,13 @@ Website: [policychangeindex.org](https://policychangeindex.org)
 Developers
 ----------
 Core maintainers:
-* [Julian TszKin Chan](https://sites.google.com/site/ctszkin/) (julian.chan [AT] policychangeindex.org)
-* [Weifeng Zhong](https://www.weifengzhong.com) (weifeng.zhong [AT] policychangeindex.org)
+* [Julian TszKin Chan](https://sites.google.com/site/ctszkin/) (julian.chan [AT] policychangeindex.org);
+* [Weifeng Zhong](https://www.weifengzhong.com) (weifeng.zhong [AT] policychangeindex.org).
 
 External contributors:
-* Kwan-Yuet "Stephen" Ho (KwanYuet.Ho [AT] leidos.com)
-* Kit Lee
-* Kawai Leung
+* Kwan-Yuet "Stephen" Ho (KwanYuet.Ho [AT] leidos.com);
+* Kit Lee;
+* Kawai Leung.
 
 
 What is the Policy Change Index for Outbreak (PCI-Outbreak)?
