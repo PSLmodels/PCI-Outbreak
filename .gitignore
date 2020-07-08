@@ -128,7 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-data/**/*.*
+data/**/*.db
+data/**/*.pickle
 
 models/**/*.tar
 models/**/*.pickle
