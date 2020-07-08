@@ -21,7 +21,7 @@ read_model_prediction = function(x){
 }
 
 version = "0.1.0"
-last_date = as.Date("2020-07-08")
+last_date = as.Date("2020-07-09")
 
 ```
 
@@ -234,9 +234,9 @@ foreach(x = results, j = names(results)) %do% {
 			legend.position = "bottom",
 			legend.background=element_blank(),
 			panel.grid.minor=element_blank(),
-			panel.grid.major=element_blank()
-			# axis.title.y.left = element_text(colour = "red"),
-			# axis.title.y.right = element_text(color = "blue")
+			panel.grid.major=element_blank(),
+			axis.title.y.left = element_text(colour = "blue"),
+			axis.title.y.right = element_text(color = "red")
 			) + 
 		guides(color = guide_legend(reverse = FALSE))
 

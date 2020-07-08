@@ -3,7 +3,7 @@ from transformers import BertTokenizer
 
 def initialize_model_settings():
 
-    last_date = pd.Timestamp(2020,7,8)
+    last_date = pd.Timestamp(2020,7,9)
 
     model_settings = {
 
@@ -30,7 +30,7 @@ def initialize_model_settings():
     
     'max_length'            : 100,
     'batch_size'            : 24,
-    'predict_batch_size'    : 960,
+    'predict_batch_size'    : 1280,
     'epochs'                : 20,
     'cuda_index'            : 0,
     'multi_gpu'             : True,
