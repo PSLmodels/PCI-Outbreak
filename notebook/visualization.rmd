@@ -59,10 +59,102 @@ df =
 	}
 
 SARS_data = read_excel("../data/SARS_Data.xlsx")
-SARS_data = SARS_data %>% select("Date", "Still infected") %>% rename(still_infected = `Still infected`) %>% mutate(date=as_date(Date, format="%b %d %Y") )
+SARS_data = SARS_data %>% select("Date", "Still infected") %>% rename(still_infected = `Still infected`) %>% mutate(date=as_date(Date, format="%b %d %Y") ) %>% select("date", "still_infected")
 
 ```
 
+```{r}
+
+art_sum_stats_sars = read_excel("../data/sars_time_series.xlsx") %>% select("date", "article_id") %>%
+    mutate(date=as_date(date) )
+art_sum_stats_covid = read_excel("../data/covid_time_series.xlsx") %>% select("date", "article_id") %>%
+    mutate(date=as_date(date) )
+
+a = 0
+b = 45
+
+df_sum_stats_sars = left_join(art_sum_stats_sars, SARS_data) %>% select("date", "article_id", "still_infected") %>% filter(date <= last_date) %>%
+    
+		ggplot(aes(x=date)) +
+
+		geom_line(aes(y=article_id, color="Number of relevant articles"), size=0.5) +
+		geom_line(aes(y=still_infected/b+a, color="Still infected cases (official)"), size=0.5) + 
+    
+        scale_linetype_manual(values=c("solid", "solid")) +
+
+		scale_x_date(			
+            breaks = seq.Date(as.Date("2003-04-03"), as.Date("2003-07-05"), by="1 month"), 
+            labels = date_format("%b %Y"), 
+            limits= c(as.Date("2003-04-03")-6, as.Date("2003-07-05")+6),
+            expand = c(0, 0)
+			) + 
+		xlab("") +
+
+		scale_y_continuous(name = "Number of articles", breaks = seq(0,70,20), limits=c(0,70),
+			sec.axis = sec_axis(~(.-a)*b, name = "Still infected", breaks = seq(0,3000,1000), labels = scales::comma)) + 
+
+		scale_colour_manual(values = c("blue", "red")) +
+
+		theme_bw() +
+		theme(
+			axis.title.x=element_blank(),
+			legend.title = element_blank(),
+			legend.position = "bottom",
+			legend.background=element_blank(),
+			panel.grid.minor=element_blank(),
+			panel.grid.major=element_blank(),
+			axis.title.y.left = element_text(colour = "blue"),
+			axis.title.y.right = element_text(color = "red")
+			) + 
+		guides(color = guide_legend(reverse = FALSE))
+
+    	ww = 6.75
+    	ggsave("../results/sum-stats-sars.png", plot = df_sum_stats_sars, width=ww, height=(2/3)*ww)
+
+a = 0
+b = 850
+
+df_sum_stats_covid = left_join(art_sum_stats_covid, df_covid) %>% select("date", "article_id", "still_infected") %>% filter(date <= last_date) %>%
+    
+		ggplot(aes(x=date)) +
+
+		geom_line(aes(y=article_id, color="Number of relevant articles"), size=0.5) +
+		geom_line(aes(y=still_infected/b+a, color="Still infected cases (official)"), size=0.5) + 
+    
+        scale_linetype_manual(values=c("solid", "solid")) +
+
+		scale_x_date(			
+            breaks = seq.Date(as.Date("2020-01-21"), last_date, by="1 month"), 
+            labels = date_format("%b %Y"), 
+            limits= c(as.Date("2020-01-21")-6, last_date+6),
+            expand = c(0, 0)
+			) + 
+		xlab("") +
+
+		scale_y_continuous(name = "Number of articles", breaks = seq(0,70,20), limits=c(0,70),
+			sec.axis = sec_axis(~(.-a)*b, name = "Still infected", breaks = seq(0,60000,20000), labels = scales::comma)) + 
+
+		scale_colour_manual(values = c("blue", "red")) +
+
+		theme_bw() +
+		theme(
+			axis.title.x=element_blank(),
+			legend.title = element_blank(),
+			legend.position = "bottom",
+			legend.background=element_blank(),
+			panel.grid.minor=element_blank(),
+			panel.grid.major=element_blank(),
+			axis.title.y.left = element_text(colour = "blue"),
+			axis.title.y.right = element_text(color = "red")
+			) + 
+		guides(color = guide_legend(reverse = FALSE))
+
+    	ww = 6.75
+    	ggsave("../results/sum-stats-covid.png", plot = df_sum_stats_covid, width=ww, height=(2/3)*ww)
+
+
+
+```
 
 ```{r}
 	min_max_date = SARS_data%>% dplyr::summarize(min_date = min(date) , max_date=max(date))

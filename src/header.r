@@ -18,7 +18,7 @@ manage_packages = function() {
 	checkpoint::checkpoint(
 		checkpointLocation = "~/",
 		snapshotDate = "2020-05-25", 
-		R.version = "3.6.3"
+		R.version = "3.6.2"
 	)
 	
 	## Import packages
