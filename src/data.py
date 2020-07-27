@@ -184,3 +184,32 @@ def process_data(model_settings):
     # df_new_irrel_semi_sentences.to_pickle(gen_data_path(model_settings, 'COVID_irrel_semi_sentences.pickle')
 
     print("Finished processing data.")
+
+
+def gen_sum_stats(model_settings):
+
+    stats_sars_relevant = pd.read_pickle(gen_data_path(model_settings, 'SARS_sentences.pickle'))        
+    stats_sars_irrelevant = pd.read_pickle(gen_data_path(model_settings, 'SARS_irrel_sentences.pickle'))
+    stats_covid_relevant = pd.read_pickle(gen_data_path(model_settings, 'COVID_sentences.pickle'))
+
+    stats_sars_relevant['text_len'] = stats_sars_relevant['sentence'].str.len()
+    stats_sars_irrelevant['text_len'] = stats_sars_irrelevant['sentence'].str.len()
+    stats_covid_relevant['text_len'] = stats_covid_relevant['sentence'].str.len()
+
+    sum_stats_data = {'group' : ['sars_relevant', 'sars_irrelevant', 'covid_relevant'],
+                      'num_articles': [stats_sars_relevant['article_id'].nunique(),
+                                       stats_sars_irrelevant['article_id'].nunique(),
+                                       stats_covid_relevant['article_id'].nunique()],
+                      'num_words_per_art': [stats_sars_relevant.groupby("article_id")["text_len"].sum().reset_index()['text_len'].mean().round(),
+                                            stats_sars_irrelevant.groupby("article_id")["text_len"].sum().reset_index()['text_len'].mean().round(),
+                                            stats_covid_relevant.groupby("article_id")["text_len"].sum().reset_index()['text_len'].mean().round()],
+                      'num_sent_per_art': [stats_sars_relevant.groupby("article_id")["sentence_id"].max().reset_index()['sentence_id'].mean().round(),
+                                           stats_sars_irrelevant.groupby("article_id")["sentence_id"].max().reset_index()['sentence_id'].mean().round(),
+                                           stats_covid_relevant.groupby("article_id")["sentence_id"].max().reset_index()['sentence_id'].mean().round()]}
+
+    sum_stats = pd.DataFrame(data=sum_stats_data)
+
+    sum_stats.to_excel(gen_data_path(model_settings, 'sum_stats.xlsx'))
+
+    stats_sars_relevant.groupby('date')['article_id'].nunique().reset_index().to_excel(gen_data_path(model_settings, 'sars_time_series.xlsx'))
+    stats_covid_relevant.groupby('date')['article_id'].nunique().reset_index().to_excel(gen_data_path(model_settings, 'covid_time_series.xlsx'))
