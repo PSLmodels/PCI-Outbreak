@@ -8,20 +8,33 @@ output:
 ```{r}
 source("../src/header.r")
 manage_packages()
+library(extrafont)
+font_import()
+loadfonts(device = "win")
 
-INPUT = function(x="") { file.path(SCRIPTS(), "../models/Sentence_Based/", x) }
+INPUT = function(x="") { file.path(SCRIPTS(), "../models/Sentence_based/", x) }
+INPUT_domestic_only = function(x="") { file.path(SCRIPTS(), "../models/Sentence_based_domestic_only/", x) }
 
 
 read_model_prediction = function(x){
-	x = match.arg(x, c("train", "test", "forecast"))
+	x = match.arg(x, c("train", "test", "forecast", "forecast_translated"))
 	
 	data = read_excel(INPUT( "stage_2_results_" %+% x %+% ".xlsx" ))
 	
 	return( data %>% select(-names(data)[1] ) )
 }
 
-version = "0.1.0"
-last_date = as.Date("2020-07-09")
+ma <- function(x, n = 7){
+	out = stats::filter(x, rep(1 / n, n), sides = 1)
+	out[1] = x[1]
+	for (i in 2:(n-1)){
+		out[i] = (stats::filter(x[1:(n-1)], rep(1 / i, i), sides = 1))[i]
+	}	
+	out
+}
+
+version = "0.2.0"
+last_date = as.Date("2020-09-15")
 
 ```
 
@@ -51,15 +64,23 @@ last_date = as.Date("2020-07-09")
 
 
 ```{r}
-df = 
-	foreach (i = c("train", "test", "forecast"), .combine = c ) %do%{
-		out = list(read_model_prediction(i))
-		names(out) = i 
-		out
-	}
+	df = 
+		foreach (i = c("train", "test", "forecast", "forecast_translated", "forecast_domestic_only"), .combine = c ) %do%{
+			if (i != "forecast_domestic_only") {
+			  out = list(read_model_prediction(i))
+			  names(out) = i 
+			  out
+			} else {
+			  df_domestic_only = read_excel(INPUT_domestic_only("stage_2_results_forecast.xlsx"))
+			  df_domestic_only = df_domestic_only %>% select(-names(df_domestic_only)[1])
+			  out = list(df_domestic_only)
+			  names(out) = i 
+			  out
+			}
+		}
 
-SARS_data = read_excel("../data/SARS_Data.xlsx")
-SARS_data = SARS_data %>% select("Date", "Still infected") %>% rename(still_infected = `Still infected`) %>% mutate(date=as_date(Date, format="%b %d %Y") )
+	SARS_data = read_excel("../data/SARS_Data.xlsx")
+	SARS_data = SARS_data %>% select("Date", "Still infected") %>% rename(still_infected = `Still infected`) %>% mutate(date=as_date(Date, format="%b %d %Y") )
 
 ```
 
@@ -92,15 +113,138 @@ SARS_data = SARS_data %>% select("Date", "Still infected") %>% rename(still_infe
 ```
 
 ```{r}
-ma <- function(x, n = 7){
-	out = stats::filter(x, rep(1 / n, n), sides = 1)
-	out[1] = x[1]
-	for (i in 2:(n-1)){
-		out[i] = (stats::filter(x[1:(n-1)], rep(1 / i, i), sides = 1))[i]
-	}	
-	out
-}
 
+art_sum_stats_sars = read_excel("../data/sars_time_series.xlsx") %>% select("date", "article_id") %>%
+    mutate(date=as_date(date), ma_num_art=ma(article_id,7))
+art_sum_stats_covid = read_excel("../data/covid_time_series.xlsx") %>% select("date", "article_id") %>%
+    mutate(date=as_date(date), ma_num_art=ma(article_id,7))
+
+a = 0
+b = 45
+# 
+# tmp_df = df_sum_stats_sars = left_join(art_sum_stats_sars, SARS_data) %>% select("date", "ma_num_art", "still_infected") %>% filter(date <= last_date)
+# 
+# tmp_df = bind_rows(
+# 	tmp_df %>% mutate(date, y= ma_num_art, type = "Number of relevant articles (7-day moving avg)") %>% select(date, y= ma_num_art, type ),
+# 	tmp_df %>% mutate(date, y= still_infected, type = "Number of relevant articles (7-day moving avg)") 
+# )
+	
+	data_for_fig_1 = 
+		left_join(art_sum_stats_sars, SARS_data) %>% select("date", "ma_num_art", "still_infected") %>% filter(date <= last_date) %>%
+			pivot_longer(!date, names_to  = "type", values_to = "value") %>%
+			mutate(type = recode(type,
+				ma_num_art = "Number of relevant articles (7-day moving average)" ,
+				still_infected = "Unresolved diagnosed cases (official)"
+			)) %>% 
+			arrange(desc(type), date) %>% 
+			mutate(type = as.factor(type))
+		
+	figure_1 = 
+		ggplot(data_for_fig_1, aes(x=date, y=value, color=type) ) + 
+			geom_line() + 
+			facet_wrap(facets= "type", scales = "free") + 
+			ylab("") + 
+			scale_x_date(			
+	            breaks = seq.Date(as.Date("2003-04-01"), as.Date("2003-07-01"), by="1 month"), 
+	            labels = date_format("%Y-%m-%d"), 
+	            limits= c(as.Date("2003-04-01")-7, as.Date("2003-07-01")+7),
+	            expand=c(0,0)
+				) + 
+			xlab("") +
+			scale_y_continuous(expand=c(.12,.12), labels = label_number(big.mark=",") ) + 
+			theme_bw() +
+			theme(
+				legend.position = "none", 
+				plot.margin = margin(t = 0, r = 20, b = 0, l = 0, unit = "pt"),
+				axis.text.x = element_text( size = 10, family = "Times New Roman"),
+				axis.text.y = element_text(family = "Times New Roman", size = 10),
+				strip.text.x  = element_text(family = "Times New Roman", size = 10)
+			)
+
+     	ww = 10
+    	ggsave("../results/figure_1.png", plot = figure_1, width=ww, height=(1/2)*ww)
+
+
+	data_for_fig_2 = 
+		left_join(art_sum_stats_covid, df_covid) %>% select("date", "ma_num_art", "still_infected") %>% filter(date <= last_date) %>% 
+			pivot_longer(!date, names_to  = "type", values_to = "value") %>%
+			mutate(type = recode(type,
+				ma_num_art = "Number of relevant articles (7-day moving average)" ,
+				still_infected = "Unresolved diagnosed cases (official)"
+			)) %>% 
+			arrange(desc(type), date) %>% 
+			mutate(type = as.factor(type))
+
+    	
+	figure_2 = 
+		ggplot(data_for_fig_2, aes(x=date, y=value, color=type) ) + 
+			geom_line() + 
+			facet_wrap(facets= "type", scales = "free") + 
+			ylab("") + 
+			scale_x_date(			
+	            breaks = seq.Date(as.Date("2020-01-01"), as.Date("2020-10-01"), by="2 month"), 
+	            labels = date_format("%Y-%m-%d"), 
+	            limits= c(as.Date("2020-01-01")-7, as.Date("2020-09-15")+7),
+	            expand=c(0,0)
+				) + 
+			xlab("") +
+			scale_y_continuous(expand=c(.12,.12), labels = label_number(big.mark=",") ) + 
+			theme_bw() +
+			theme(
+				legend.position = "none", 
+				plot.margin = margin(t = 0, r = 20, b = 0, l = 0, unit = "pt"),
+				axis.text.x = element_text(size = 10, family = "Times New Roman"),
+				axis.text.y = element_text(family = "Times New Roman", size = 10),
+				strip.text.x  = element_text(family = "Times New Roman", size = 10)
+			)
+
+     	ww = 10
+    	ggsave("../results/figure_2.png", plot = figure_2, width=ww, height=(1/2)*ww)
+
+#     	
+# df_sum_stats_covid = left_join(art_sum_stats_covid, df_covid) %>% select("date", "ma_num_art", "still_infected") %>% filter(date <= last_date) %>%
+# 
+# 		ggplot(aes(x=date)) +
+# 
+# 		geom_line(aes(y=ma_num_art, color="Number of relevant articles (7-day moving avg)", linetype="Number of relevant articles (7-day moving avg)"), size=0.5) +
+# 		geom_line(aes(y=still_infected/b+a, color="Unresolved diagnosed cases (official)", linetype="Unresolved diagnosed cases (official)"), size=0.5) +
+# 
+#         scale_linetype_manual(values=c("solid", "dotdash"), guide = FALSE) +
+# 
+# 		scale_x_date(
+#             breaks = seq.Date(as.Date("2020-01-21"), last_date, by="1 month"),
+#             labels = date_format("%b %Y"),
+#             limits= c(as.Date("2020-01-21")-6, last_date+6),
+#             expand = c(0, 0)
+# 			) +
+# 		xlab("") +
+# 
+# 		scale_y_continuous(name = "Number of relevant articles", breaks = seq(0,70,20), limits=c(0,70),
+# 			sec.axis = sec_axis(~(.-a)*b, name = "Unresolved diagnosed cases", breaks = seq(0,60000,20000), labels = scales::comma)) +
+# 
+# 		scale_colour_manual(values = c("blue", "red")) +
+# 
+# 		theme_bw() +
+# 		theme(
+# 			axis.title.x=element_blank(),
+# 			legend.title = element_blank(),
+# 			legend.position = "bottom",
+# 			legend.background=element_blank(),
+# 			panel.grid.minor=element_blank(),
+# 			panel.grid.major=element_blank(),
+# 			text=element_text("Times New Roman"),
+# 			axis.title.y.left = element_text(colour = "blue"),
+# 			axis.title.y.right = element_text(color = "red")
+# 			) +
+# 		guides(color = guide_legend(reverse = FALSE, override.aes = list(linetype = c("solid","dotdash") ) ) )
+# 
+#     	ww = 6.75
+#     	ggsave("../results/sum-stats-covid.png", plot = df_sum_stats_covid, width=ww, height=(2/3)*ww)
+
+```
+
+
+```{r}
 results = 
 	foreach(i = df, j = names(df), .combine=c) %do% {
 		
@@ -153,110 +297,256 @@ foreach(x = results, j = names(results)) %do% {
 
 ```{r}
 
-covid_event <- function(vertical_position = 1) {
-    
-    out = list()
-    font_size =3
-    font_size2 =2.5
-    text_delta = 1
-    text_drop = 0.019
+# covid_event <- function(vertical_position = 1) {
+#     
+#     out = list()
+#     font_size =3
+#     font_size2 =2.5
+#     text_delta = 1
+#     text_drop = 0.019
+# 
+#     add_bar <- function(highlight, date){
+#     	geom_vline(xintercept=as.Date(date), linetype = "solid", col=ifelse(highlight==1, "mediumspringgreen", "grey80"), size = 1)
+#     }
+# 
+#     add_text <- function(highlight, date, label, v_adj){
+#     	annotate("text", x = as.Date(date)+text_delta, y = vertical_position*v_adj, hjust = 0,
+#                  label = label,  color =  ifelse(highlight==1, "red" , "black"), size = ifelse(highlight==1, font_size , font_size2), family = "Times New Roman")
+#     }
+# 
+#     out = c(out, add_bar(0, '2020-01-23'))
+#     out = c(out, add_bar(0, '2020-02-10'))
+#     # out = c(out, add_bar(0, '2020-02-13'))
+#     out = c(out, add_bar(0, '2020-04-08'))
+#     # out = c(out, add_bar(0, '2020-04-17'))
+#     # out = c(out, add_bar(0, '2020-04-30'))
+#     out = c(out, add_bar(0, '2020-06-11'))
+#     out = c(out, add_bar(0, '2020-07-17'))
+#     out = c(out, add_bar(0, '2020-08-24'))
+# 
+#     out = c(out, add_text(0, '2020-01-23', "1/23: Wuhan lockdown", 1))
+#     out = c(out, add_text(0, '2020-02-10', "2/10: Beijing (partial) lockdown", 1-text_drop))
+#     # out = c(out, add_text(0, '2020-02-13', "2/13: Official numbers revised", 1-2*text_drop))
+#     out = c(out, add_text(0, '2020-04-08', "4/8: Wuhan lockdown lifted", 1-3.5*text_drop))
+#     # out = c(out, add_text(0, '2020-04-17', "4/17: Official numbers revised again", 1-4.5*text_drop))
+#     # out = c(out, add_text(0, '2020-04-30', "4/30: Beijing lockdown lifted", 1-5.5*text_drop))
+#     out = c(out, add_text(0, '2020-06-11', "6/11: Second outbreak in Beijing", 1-7*text_drop))
+#     out = c(out, add_text(0, '2020-07-17', "7/17: Xinjiang outbreak\nand lockdown", 1-8.75*text_drop))
+#     out = c(out, add_text(0, '2020-08-24', "8/24: Xinjiang\nlockdown\npartially lifted", 1-3.5*text_drop))
+#     
+#     out
+# }
 
-    add_bar <- function(highlight, date){
-    	geom_vline(xintercept=as.Date(date), linetype = "solid", col=ifelse(highlight==1, "mediumspringgreen", "grey80"), size = 1)
-    }
-
-    add_text <- function(highlight, date, label, v_adj){
-    	annotate("text", x = as.Date(date)+text_delta, y = vertical_position*v_adj, hjust = 0,
-                 label = label,  color =  ifelse(highlight==1, "red" , "black"), size = ifelse(highlight==1, font_size , font_size2))
-    }
-
-    out = c(out, add_bar(0, '2020-01-23'))
-    out = c(out, add_bar(0, '2020-02-10'))
-    out = c(out, add_bar(0, '2020-02-13'))
-    out = c(out, add_bar(0, '2020-04-08'))
-    out = c(out, add_bar(0, '2020-04-17'))
-    out = c(out, add_bar(0, '2020-04-30'))
-    out = c(out, add_bar(0, '2020-06-11'))
-
-    out = c(out, add_text(0, '2020-01-23', "1/23: Wuhan lockdown", 1))
-    out = c(out, add_text(0, '2020-02-10', "2/10: Beijing (partial) loackdown", 1-text_drop))
-    out = c(out, add_text(0, '2020-02-13', "2/13: Official numbers revised", 1-2*text_drop))
-    out = c(out, add_text(0, '2020-04-08', "4/8: Wuhan lockdown lifted", 1-2*text_drop))
-    out = c(out, add_text(0, '2020-04-17', "4/17: Official numbers revised again", 1-3*text_drop))
-    out = c(out, add_text(0, '2020-04-30', "4/30: Beijing lockdown lifted", 1-4*text_drop))
-    out = c(out, add_text(0, '2020-06-11', "6/11: Second\noutbreak in Beijing", 1-5.5*text_drop))
-    
-    out
+covid_label  <- function() {
+	df = 
+		data.frame(
+			x = as.Date(c('2020-01-23', '2020-02-10', '2020-04-08', '2020-06-11', '2020-07-17', '2020-08-24')),
+			y = c(20,60,20,20,20,20) * 1000, 
+			label = c("1/23: Wuhan lockdown",
+					  "2/10: Beijing (partial) lockdown", 
+					  "4/8: Wuhan lockdown lifted",
+					  "6/11: Second outbreak in Beijing",
+					  "7/17: Xinjiang outbreak\nand lockdown",
+					  "8/24: Xinjiang\nlockdown\npartially lifted"
+			),
+			type = rep("Unresolved diagnosed cases (official)",6)
+		)
+	geom_text(
+		data =df, 
+		mapping = aes(x=x,y=y,label=label),
+		color = "black"
+	)
 }
 
-foreach(x = results, j = names(results)) %do% {
-	
-	
-	if (j %in% c("train", "test")){
 
-		out = x %>% ggplot(aes(x=date, y= ma_still_infected)) +
-			ggtitle(j) + geom_point() + geom_line()
+data_fig_3=
+	bind_rows(
+		results$forecast %>% filter(date <= last_date) %>% mutate(type="PCI-Outbreak") %>% select(date,type, value = ma_still_infected_norm),
+		df_covid %>% mutate(type = "Unresolved diagnosed cases (official)") %>% select(date, type, value = still_infected )
+	) %>% 
+	arrange(desc(type), date) %>% 
+	mutate(type = factor(type,levels=c("PCI-Outbreak","Unresolved diagnosed cases (official)")))
 
-		out = out + geom_line(data = SARS_data, aes(x=date, y=still_infected), color="blue")
+
+covid_label  <- function() {
+	df = 
+		data.frame(
+			x = as.Date(c('2020-01-23', '2020-02-10', '2020-04-08', '2020-06-11', '2020-07-17', '2020-08-24')),
+			y = c(40,65,60,60,60,60) * 1000, 
+			label = c("1/23, Wuhan\nlockdown",
+					  "2/10, Beijing\n(partial) lockdown", 
+					  "4/8, Wuhan\nlockdown lifted",
+					  "6/11, Beijing \n second outbreak",
+					  "7/17, Xinjiang\noutbreak and lockdown",
+					  "8/24, Xinjiang\nlockdown partially lifted"
+			),
+			type = rep("Unresolved diagnosed cases (official)",6)
+		)
+	geom_text(
+		data =df, 
+		mapping = aes(x=x,y=y,label=label),
+		color = "black",
+		size = 3 , 
+		family = "Times New Roman"
+	)
+}
+covid_time  <- function() {
+	
+	out = list()
+	
+	add_bar <- function(highlight, date){
+		geom_vline(xintercept=as.Date(date), linetype = "solid", col=ifelse(highlight==1, "mediumspringgreen", "grey85"), size = 1)
 	}
 	
 	
-	if (j %in% c("forecast")){
-		a = 0.55
-		b = 240000
+	out = c(out, add_bar(0, '2020-01-23'))
+	out = c(out, add_bar(0, '2020-02-10'))
+	out = c(out, add_bar(0, '2020-04-08'))
+	out = c(out, add_bar(0, '2020-06-11'))
+	out = c(out, add_bar(0, '2020-07-17'))
+	out = c(out, add_bar(0, '2020-08-24'))
 	
-		out = x %>% filter(date <= last_date) %>%
-		    
-		ggplot(aes(x=date)) +
-
-		covid_event(vertical_position=0.85) +
-
-		geom_line(aes(y= ma_still_infected_norm, color="PCI-Outbreak"), size=1 ) +
-		geom_line(data=df_covid, aes(x=date, y=still_infected/b+a, color="Still infected cases (official)"), size=1) + 
-
-		scale_x_date(			
-            breaks = seq.Date(as.Date("2020-02-01"), last_date, by="1 month"), 
-            labels = date_format("%b %Y"), 
-            limits= c(as.Date("2020-01-21")-6, last_date+6),
-            expand = c(0, 0)
-			) + 
-		xlab("") +
-
-		scale_y_continuous(name = "PCI-Outbreak", breaks = seq(0,1,0.05), limits=c(0.54, 0.86),
-			sec.axis = sec_axis(~(.-a)*b, name = "Still infected", breaks = seq(0,70000,10000) , labels = scales::comma)) + 
-
-		scale_colour_manual(values = c("blue", "red")) +
-
-		theme_bw() +
-		theme(
-			axis.title.x=element_blank(),
-			legend.title = element_blank(),
-			legend.position = "bottom",
-			legend.background=element_blank(),
-			panel.grid.minor=element_blank(),
-			panel.grid.major=element_blank(),
-			axis.title.y.left = element_text(colour = "blue"),
-			axis.title.y.right = element_text(color = "red")
-			) + 
-		guides(color = guide_legend(reverse = FALSE))
-
-    	ww = 6.75
-    	ggsave("../results/pci-outbreak.png", plot = out, width=ww, height=(2/3)*ww)
-    	
-    	note = expression(paste("Source: ", italic("Policy Change Index"), ", https://policychangeindex.org/"))
-    	                        
-    	out2 = out +
-    	    labs(title = "Policy Change Index for Outbreak and official COVID cases in China",
-    	         caption = note) +
-    	    coord_cartesian(clip = "off") +
-    	    theme(plot.title = element_text(hjust = 0.5, margin=margin(t=3, b=12)),
-    	          plot.caption=element_text(size=9, hjust=0, margin=margin(t=9, b=3)))
-    	ggsave("../results/pci-outbreak_w_caption.png", plot = out2, width=ww, height=(3/4)*ww)
-
-	}
 	
 	out
 }
+
+covid_pointer = function(){
+	df_text = 
+		data.frame(
+			x = as.Date('2020-03-7'),
+			y = .635,
+			label = "2/17, unresolved diagnosed\ncases peaked at 58,108",
+			type = "PCI-Outbreak"
+		)
+	
+	df_arrow = 
+		data.frame(
+			x = c("2020-03-01","2020-02-17") %>% as.Date,
+			y = c(0.65,.742) ,
+			type = rep("PCI-Outbreak",2)
+		)
+	
+	list(
+		geom_text(
+			data =df_text, 
+			mapping = aes(x=x,y=y,label=label),
+			color = "black",
+			size = 3 , 
+			family = "Times New Roman"
+		),
+		geom_line(
+			data = df_arrow, 
+			mapping = aes(x=x,y=y),
+			arrow = arrow(length=unit(0.10,"cm"), ends="first", type = "open"), size = 0.5, color = "black")
+	)
+	
+}
+
+figure_3=
+	ggplot(data_fig_3, aes(x=date, y=value, color=type)) + 
+		covid_time() +
+		covid_label()+
+		covid_pointer()+
+		geom_line() + 
+	
+		facet_wrap(facets= "type", scales = "free", ncol=1)  + 
+		ylab("") + 
+		scale_x_date(			
+			breaks = seq.Date(as.Date("2020-01-01"), as.Date("2020-10-01"), by="1 month"), 
+			labels = date_format("%Y-%m-%d"), 
+			limits= c(as.Date("2020-01-15")-7, as.Date("2020-09-15")+7),
+			expand=c(0,0)
+		) + 
+		xlab("") +
+		scale_y_continuous(expand = expansion(mult = .15, add = 0), labels = label_number(big.mark=",") ) +
+		theme_bw() +
+		theme(
+			legend.position = "none", 
+			plot.margin = margin(t = 0, r = 20, b = 0, l = 0, unit = "pt"),
+			axis.text.x = element_text( size = 10, family = "Times New Roman"),
+			axis.text.y = element_text(family = "Times New Roman", size = 10),
+			strip.text.x  = element_text(family = "Times New Roman", size = 10)
+		)
+	
+figure_3
+ww = 10
+ggsave("../results/figure_3.png", plot = figure_3, width=ww, height=(3/4)*ww)
+
+
+
+
+
+# 
+# foreach(x = results, j = names(results)) %do% {
+# 	
+# 	
+# 	if (j %in% c("train", "test")){
+# 
+# 		out = x %>% ggplot(aes(x=date, y= ma_still_infected)) +
+# 			ggtitle(j) + geom_point() + geom_line()
+# 
+# 		out = out + geom_line(data = SARS_data, aes(x=date, y=still_infected), color="blue")
+# 	}
+# 	
+# 	
+# 	if (j %in% c("forecast")){
+# 		a = 0.45
+# 		b = 55000/0.3
+# 	
+# 		out = x %>% filter(date <= last_date) %>%
+# 		    
+# 		ggplot(aes(x=date)) +
+# 
+# 		covid_event(vertical_position=0.85) +
+# 
+# 		geom_line(aes(y= ma_still_infected_norm, color="PCI-Outbreak", linetype="PCI-Outbreak"), size=1 ) +
+# 		geom_line(data=df_covid, aes(x=date, y=still_infected/b+a, color="Unresolved diagnosed cases (official)", linetype="Unresolved diagnosed cases (official)"), size=1) + 
+# 
+# 		scale_x_date(			
+#             breaks = seq.Date(as.Date("2020-02-01"), last_date+7, by="1 month"), 
+#             labels = date_format("%b %Y"), 
+#             limits= c(as.Date("2020-01-21")-6, (last_date+7)+6),
+#             expand = c(0, 0)
+# 			) + 
+# 		xlab("") +
+# 
+# 		scale_y_continuous(name = "PCI-Outbreak", breaks = seq(0,1,0.1), limits=c(0.44, 0.86),
+# 			sec.axis = sec_axis(~(.-a)*b, name = "Unresolved diagnosed cases", breaks = seq(0,70000,10000) , labels = scales::comma)) + 
+# 
+# 		scale_colour_manual(values = c("blue", "red")) +
+# 		scale_linetype_manual(values=c("solid", "dotdash"), guide = FALSE) +
+# 
+# 		theme_bw() +
+# 		theme(
+# 			axis.title.x=element_blank(),
+# 			legend.title = element_blank(),
+# 			legend.position = "bottom",
+# 			legend.background=element_blank(),
+# 			panel.grid.minor=element_blank(),
+# 			panel.grid.major=element_blank(),
+# 			text=element_text("Times New Roman"),
+# 			axis.title.y.left = element_text(colour = "blue"),
+# 			axis.title.y.right = element_text(color = "red")
+# 			) + 
+# 		guides(color = guide_legend(reverse = FALSE, override.aes = list(linetype = c("solid","dotdash") ) ) ) 
+# 
+#     	ww = 6.75
+#     	ggsave("../results/pci-outbreak.png", plot = out, width=ww, height=(2/3)*ww)
+#     	
+#     	note = expression(paste("Source: ", italic("Policy Change Index"), ", https://policychangeindex.org/"))
+#     	                        
+#     	out2 = out +
+#     	    labs(title = "Policy Change Index for Outbreak and official COVID cases in China",
+#     	         caption = note) +
+#     	    coord_cartesian(clip = "off") +
+#     	    theme(plot.title = element_text(hjust = 0.5, margin=margin(t=3, b=12)),
+#     	          plot.caption=element_text(size=9, hjust=0, margin=margin(t=9, b=3)))
+#     	ggsave("../results/pci-outbreak_w_caption.png", plot = out2, width=ww, height=(3/4)*ww)
+# 
+# 	}
+# 	
+# 	out
+# }
 ```
 
 
@@ -265,5 +555,223 @@ foreach(x = results, j = names(results)) %do% {
 	export_excel(PCI_outbreak, paste0("../results/PCI-Outbreak_v",version,"_",as.character(last_date),".xlsx"), sheetname = "PCI-Outbrekk")
 ```
 
+```{r}
+
+covid_measure = results[[3]] %>% filter(date <= last_date) %>% select(c(date, ma_still_infected_norm))
+
+covid_measure_translated = results[[4]] %>% filter(date <= last_date) %>% select(c(date, ma_still_infected_norm))
+
+df_compare = left_join(covid_measure, covid_measure_translated, by="date")
+
+a = 0
+b = 1
 
 
+data_for_fig_4 = df_compare %>% 
+			pivot_longer(!date, names_to  = "type", values_to = "value") %>%
+			mutate(type = recode(type,
+				ma_still_infected_norm.x = "Baseline" ,
+				ma_still_infected_norm.y = "Translated"
+			)) %>% 
+			arrange(type, date) %>% 
+			mutate(type = as.factor(type))
+	
+figure_4 = 
+	ggplot(data_for_fig_4, aes(x=date, y=value, color = type, linetype = type)) +
+		geom_line(lwd = .8) + 
+		scale_x_date(			
+            breaks = seq.Date(as.Date("2020-01-01"), as.Date("2020-10-01"), by="1 month"), 
+            labels = date_format("%Y-%m-%d"), 
+            limits= c(as.Date("2020-01-15")-7, as.Date("2020-09-15")+7),
+            expand=c(0,0)
+			) + 
+		ylab("PCI-Outbreak") +
+		scale_y_continuous(expand=c(0.02,0.02)) + 
+		theme_bw() +
+		theme(
+			legend.position = "bottom", 
+			legend.title = element_blank(),
+			plot.margin = margin(t = 0, r = 20, b = 0, l = 0, unit = "pt"),
+			axis.text.x = element_text(size = 10, family = "Times New Roman"),
+			axis.text.y = element_text(family = "Times New Roman", size = 10),
+			strip.text.x  = element_text(family = "Times New Roman", size = 10),
+			axis.title.x=element_blank(),
+			text=element_text("Times New Roman"),
+		)
+
+     	ww = 8
+    	ggsave("../results/figure_4.png", plot = figure_4, width=ww, height=(2/3)*ww)
+
+	
+	
+	
+# 	
+# 
+# out = df_compare %>%
+#   ggplot(aes(x=date)) +
+#   
+#   geom_line(aes(y=ma_still_infected_norm.x, color="PCI-Outbreak" , linetype="PCI-Outbreak" ), size=1 ) +
+#   geom_line(aes(y=ma_still_infected_norm.y, color="PCI-Outbreak (Translated)" , linetype="PCI-Outbreak (Translated)"), size=0.75 ) +
+#   
+# 	scale_x_date(			
+#         breaks = seq.Date(as.Date("2020-02-01"), last_date+7, by="1 month"), 
+#         labels = date_format("%b %Y"), 
+#         limits= c(as.Date("2020-01-21")-6, (last_date+7)+6),
+#         expand = c(0, 0)
+# 	) + 
+#   xlab("") +
+#   
+# 	scale_y_continuous(name = "PCI-Outbreak", breaks = seq(0,1,0.1), limits=c(.55, .8),
+# 	sec.axis = sec_axis(~(.-a)*b, name = "PCI-Outbreak (Translated)", breaks = seq(0,1,0.1))) + 
+#   
+# 	scale_colour_manual(values = c("blue", "red")) +
+# 	scale_linetype_manual(values=c("solid", "dotdash"), guide = FALSE) +
+# 	theme_bw() +
+# 	theme(
+# 		axis.title.x=element_blank(),
+# 		legend.title = element_blank(),
+# 		legend.position = "bottom",
+# 		legend.background=element_blank(),
+# 		panel.grid.minor=element_blank(),
+# 		panel.grid.major=element_blank(),
+# 		text=element_text("Times New Roman"),
+# 		axis.title.y.left = element_text(colour = "blue"),
+# 		axis.title.y.right = element_text(color = "red")
+# 		) + 
+# 		guides(color = guide_legend(reverse = FALSE, override.aes = list(linetype = c("solid","dotdash") ) ) ) 
+#   
+# 	
+# 
+# 	
+# 	ww = 6.75
+# 	ggsave("../results/pci-outbreak-translated.png", plot = out, width=ww, height=(2/3)*ww)
+# 
+# out
+
+```
+
+
+```{r}
+
+covid_measure = results[[3]] %>% filter(date <= last_date) %>% select(c(date, ma_still_infected_norm))
+
+covid_measure_domestic_only = results[[5]] %>% filter(date <= last_date) %>% select(c(date, ma_still_infected_norm))
+
+df_compare = left_join(covid_measure, covid_measure_domestic_only, by="date")
+
+
+data_for_fig_5 = df_compare %>% 
+			pivot_longer(!date, names_to  = "type", values_to = "value") %>%
+			mutate(type = recode(type,
+				ma_still_infected_norm.x = "Baseline" ,
+				ma_still_infected_norm.y = "Domestic-only"
+			)) %>% 
+			arrange(type, date) %>% 
+			mutate(type = as.factor(type))
+	
+
+figure_5 = 
+	ggplot(data_for_fig_5, aes(x=date, y=value, color = type, linetype = type)) +
+		geom_line(lwd = .8) + 
+		scale_x_date(			
+            breaks = seq.Date(as.Date("2020-01-01"), as.Date("2020-10-01"), by="1 month"), 
+            labels = date_format("%Y-%m-%d"), 
+            limits= c(as.Date("2020-01-15")-7, as.Date("2020-09-15")+7),
+            expand=c(0,0)
+			) + 
+		ylab("PCI-Outbreak") +
+		scale_y_continuous(expand=c(0.02,0.02)) + 
+		theme_bw() +
+		theme(
+			legend.position = "bottom", 
+			legend.title = element_blank(),
+			plot.margin = margin(t = 0, r = 20, b = 0, l = 0, unit = "pt"),
+			axis.text.x = element_text(size = 10, family = "Times New Roman"),
+			axis.text.y = element_text(family = "Times New Roman", size = 10),
+			strip.text.x  = element_text(family = "Times New Roman", size = 10),
+			text=element_text("Times New Roman"),
+			axis.title.x=element_blank()
+		)
+
+     	ww = 8
+    	ggsave("../results/figure_5.png", plot = figure_5, width=ww, height=(2/3)*ww)
+
+
+# 
+# a = 0
+# b = 1
+# 
+# out = df_compare %>%
+#   ggplot(aes(x=date)) +
+#   
+#   geom_line(aes(y=ma_still_infected_norm.x, color="PCI-Outbreak",  linetype="PCI-Outbreak"), size=1)  +
+#   geom_line(aes(y=ma_still_infected_norm.y, color="PCI-Outbreak (domestic-only)", linetype="PCI-Outbreak (domestic-only)"), size=0.75) +
+#   
+# 	scale_x_date(			
+#         breaks = seq.Date(as.Date("2020-02-01"), last_date+7, by="1 month"), 
+#         labels = date_format("%b %Y"), 
+#         limits= c(as.Date("2020-01-21")-6, (last_date+7)+6),
+#         expand = c(0, 0)
+# 	) + 
+#   xlab("") +
+#   
+# 	scale_y_continuous(name = "PCI-Outbreak", breaks = seq(0,1,0.1), limits=c(0.44, 0.86),
+# 	sec.axis = sec_axis(~(.-a)*b, name = "PCI-Outbreak (domestic-only)", breaks = seq(0,1,0.1))) + 
+#   
+# 	scale_color_manual(values = c("blue", "red")) +
+# 	scale_linetype_manual(values=c("solid", "dotdash"), guide = FALSE) +
+# 	
+# 	theme_bw() +
+# 	theme(
+# 		axis.title.x=element_blank(),
+# 		legend.title = element_blank(),
+# 		legend.position = "bottom",
+# 		legend.background=element_blank(),
+# 		panel.grid.minor=element_blank(),
+# 		panel.grid.major=element_blank(),
+# 		axis.title.y.left = element_text(colour = "blue"),
+# 		axis.title.y.right = element_text(color = "red"),
+# 		text=element_text("Times New Roman")) + 
+# 		guides(color = guide_legend(reverse = FALSE, override.aes = list(linetype = c("solid","dotdash") ) ) ) 
+# out
+# 
+# 	ww = 6.75
+# 	ggsave("../results/pci-outbreak-domestic-only.png", plot = out, width=ww, height=(2/3)*ww)
+
+
+
+```
+
+
+```{r}
+	test1 = read_excel("../models/Sentence_based/stage_1_matrix_test.xlsx")
+	train1 = read_excel("../models/Sentence_based/stage_1_matrix_train.xlsx")
+	
+	norm = function(x) {
+		x/ sum(x)
+	}
+	tab_test1 = test1[,2:3] %>% as.matrix  %>% norm
+	tab_train1 = train1[,2:3] %>% as.matrix  %>% norm
+	
+	export_excel(cbind(tab_train1, tab_test1), "../results/table 2.xlsx", sheetname = "raw")
+	
+	
+	test2 = read_excel("../models/Sentence_based/stage_2_results_test.xlsx")
+	train2 = read_excel("../models/Sentence_based/stage_2_results_train.xlsx")
+	
+	tab_train2 = train2 %>% select(label,pred) %>% mutate(pred=floor(pred/7) , label = floor(label/7) ) %>% table
+	
+	tab_train2 = tab_train2[,-1] / sum(tab_train2[,-1])
+	
+	tab_train2 %>% as.matrix %>% 
+		export_excel("../results/table 3.xlsx", sheetname = "raw")
+
+	
+	
+	tab_test2 = test2 %>% select(label,pred) %>% mutate(pred=floor(pred/7) , label = floor(label/7) ) %>% table
+	tab_test2 = tab_test2[,-1] / sum(tab_test2[,-1])
+
+	tab_test2 %>% as.matrix %>% 
+		export_excel("../results/table 4.xlsx", sheetname = "raw")
+
+```
