@@ -34,17 +34,22 @@ def cut_semi_sent(para):
     return [sent.strip() for sent in sent_list]
 
     
-def read_data_from_sql(input_path, keywords, from_date, to_date, min_ratio, min_count):
+def read_data_from_sql(input_path, keywords, from_date, to_date, min_ratio, min_count, foreign_countries, foreign_min_count):
     conn = sqlite3.connect(input_path)
     df = pd.read_sql_query("select title, body, date, id from main where date >= Datetime('"+str(from_date)+"') and date <= Datetime('"+str(to_date)+"')", conn)
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     conn.close()
 
     df['text'] = df['title'] + " " + df['body']
+
     df['text_count'] = df['text'].str.count('|'.join(keywords))
     df['text_len'] = df['text'].str.len()
     df['text_ratio'] = df['text_count']/df['text_len']
     df['relevance'] = ((df['text_ratio']>=min_ratio) & (df['text_count']>=min_count)) + 0
+
+    df['foreign_count'] = df['text'].str.count('|'.join(foreign_countries))
+    df['foreign'] = (df['foreign_count']>=foreign_min_count) + 0
+
     df_relevant = df.loc[df['relevance']==1]
     # df_ambiguous = df.loc[(df['relevance']==0) & (df['text_count']>0)]
     df_irrelevant = df.loc[df['text_count']==0]
@@ -62,6 +67,7 @@ def split_to_sentences(df, use_titles=False):
 
     df_out_title = pd.DataFrame({"date" : np.repeat(df_title['date'].values,lens),
                                  "relevance" : np.repeat(df_title['relevance'].values,lens),
+                                 "foreign" : np.repeat(df_title['foreign'].values,lens),
                                  "article_id" : np.repeat(df_title['id'].values,lens),
                                  "sentence" : np.hstack(df_title['sentence'])
                                 })
@@ -73,6 +79,7 @@ def split_to_sentences(df, use_titles=False):
 
     df_out_body = pd.DataFrame({"date" : np.repeat(df_body['date'].values,lens),
                                 "relevance" : np.repeat(df_body['relevance'].values,lens),
+                                "foreign" : np.repeat(df_body['foreign'].values,lens),
                                 "article_id" : np.repeat(df_body['id'].values,lens),
                                 "sentence" : np.hstack(df_body['sentence'])
                                })
@@ -102,6 +109,7 @@ def split_to_semi_sentences(df, use_titles=False):
 
     df_out_title = pd.DataFrame({"date" : np.repeat(df_title['date'].values,lens),
                                  "relevance" : np.repeat(df_title['relevance'].values,lens),
+                                 "foreign" : np.repeat(df_title['foreign'].values,lens),
                                  "article_id" : np.repeat(df_title['id'].values,lens),
                                  "sentence" : np.hstack(df_title['sentence'])
                                 })
@@ -113,6 +121,7 @@ def split_to_semi_sentences(df, use_titles=False):
 
     df_out_body = pd.DataFrame({"date" : np.repeat(df_body['date'].values,lens),
                                 "relevance" : np.repeat(df_body['relevance'].values,lens),
+                                "foreign" : np.repeat(df_body['foreign'].values,lens),
                                 "article_id" : np.repeat(df_body['id'].values,lens),
                                 "sentence" : np.hstack(df_body['sentence'])
                                })
@@ -142,13 +151,15 @@ def process_data(model_settings):
     for file in gen_raw_data_path(model_settings):
         df_old_i, df_old_irrel_i = read_data_from_sql(input_path=file, keywords=model_settings['keywords_old'],
             from_date=model_settings['from_date_old'], to_date=model_settings['to_date_old'],
-            min_ratio=model_settings['min_ratio_old'], min_count=model_settings['min_count_old'])
+            min_ratio=model_settings['min_ratio_old'], min_count=model_settings['min_count_old'],
+            foreign_countries=model_settings['foreign_countries'], foreign_min_count=model_settings['foreign_min_count'])
         old_list.append(df_old_i)
         old_irrel_list.append(df_old_irrel_i)
 
         df_new_i, df_new_irrel_i = read_data_from_sql(input_path=file, keywords=model_settings['keywords_new'],
             from_date=model_settings['from_date_new'], to_date=model_settings['to_date_new'],
-            min_ratio=model_settings['min_ratio_new'], min_count=model_settings['min_count_new'])
+            min_ratio=model_settings['min_ratio_new'], min_count=model_settings['min_count_new'],
+            foreign_countries=model_settings['foreign_countries'], foreign_min_count=model_settings['foreign_min_count'])
         new_list.append(df_new_i)
         new_irrel_list.append(df_new_irrel_i)
 
@@ -184,3 +195,32 @@ def process_data(model_settings):
     # df_new_irrel_semi_sentences.to_pickle(gen_data_path(model_settings, 'COVID_irrel_semi_sentences.pickle')
 
     print("Finished processing data.")
+
+
+def gen_sum_stats(model_settings):
+
+    stats_sars_relevant = pd.read_pickle(gen_data_path(model_settings, 'SARS_sentences.pickle'))        
+    stats_sars_irrelevant = pd.read_pickle(gen_data_path(model_settings, 'SARS_irrel_sentences.pickle'))
+    stats_covid_relevant = pd.read_pickle(gen_data_path(model_settings, 'COVID_sentences.pickle'))
+
+    stats_sars_relevant['text_len'] = stats_sars_relevant['sentence'].str.len()
+    stats_sars_irrelevant['text_len'] = stats_sars_irrelevant['sentence'].str.len()
+    stats_covid_relevant['text_len'] = stats_covid_relevant['sentence'].str.len()
+
+    sum_stats_data = {'group' : ['sars_relevant', 'sars_irrelevant', 'covid_relevant'],
+                      'num_articles': [stats_sars_relevant['article_id'].nunique(),
+                                       stats_sars_irrelevant['article_id'].nunique(),
+                                       stats_covid_relevant['article_id'].nunique()],
+                      'num_words_per_art': [stats_sars_relevant.groupby("article_id")["text_len"].sum().reset_index()['text_len'].mean().round(),
+                                            stats_sars_irrelevant.groupby("article_id")["text_len"].sum().reset_index()['text_len'].mean().round(),
+                                            stats_covid_relevant.groupby("article_id")["text_len"].sum().reset_index()['text_len'].mean().round()],
+                      'num_sent_per_art': [stats_sars_relevant.groupby("article_id")["sentence_id"].max().reset_index()['sentence_id'].mean().round(),
+                                           stats_sars_irrelevant.groupby("article_id")["sentence_id"].max().reset_index()['sentence_id'].mean().round(),
+                                           stats_covid_relevant.groupby("article_id")["sentence_id"].max().reset_index()['sentence_id'].mean().round()]}
+
+    sum_stats = pd.DataFrame(data=sum_stats_data)
+
+    sum_stats.to_excel(gen_data_path(model_settings, 'sum_stats.xlsx'))
+
+    stats_sars_relevant.groupby('date')['article_id'].nunique().reset_index().to_excel(gen_data_path(model_settings, 'sars_time_series.xlsx'))
+    stats_covid_relevant.groupby('date')['article_id'].nunique().reset_index().to_excel(gen_data_path(model_settings, 'covid_time_series.xlsx'))
