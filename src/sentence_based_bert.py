@@ -30,7 +30,7 @@ def translate_terms(df, to_translate=False):
         trans2_from = '新冠肺炎'
         trans2_to = '非典肺炎'
 
-        trans3_from = '新型冠状病'
+        trans3_from = '新型冠状病毒'
         trans3_to = '非典型肺炎病毒'
 
         trans4_from = '新冠病毒'
@@ -64,7 +64,7 @@ def gen_stage_2_label(df, start, by_date = True):
     return df
 
 
-def gen_train_test_data(model_settings, stage):
+def gen_train_test_data(model_settings, stage, domestic_only=False):
     """
     stage: specify which of the two stages are the data generated for
     """
@@ -74,6 +74,9 @@ def gen_train_test_data(model_settings, stage):
         ## import preprocessed data
         df_sars = pd.read_pickle(gen_data_path(model_settings, 'SARS_sentences.pickle'))
         df_sars_irrel = pd.read_pickle(gen_data_path(model_settings, 'SARS_irrel_sentences.pickle'))
+        if domestic_only:
+            df_sars = df_sars.loc[df_sars['foreign']==0]
+            df_sars_irrel = df_sars_irrel.loc[df_sars_irrel['foreign']==0]
 
         ## generate labels (binary on whether it's relevant)
         df_sars['label'] = 1
@@ -103,6 +106,8 @@ def gen_train_test_data(model_settings, stage):
     elif stage==2:
         ## import preprocessed data
         df_sars = pd.read_pickle(gen_data_path(model_settings, 'SARS_sentences.pickle'))
+        if domestic_only:
+            df_sars = df_sars.loc[df_sars['foreign']==0]
 
         ## extract start date of SARS data
         SARS_START = min(df_sars['date'])
@@ -123,7 +128,7 @@ def gen_train_test_data(model_settings, stage):
     return df_train, df_test, df_train_unbal
 
 
-def gen_forecast_data(model_settings, stage, to_translate=False):
+def gen_forecast_data(model_settings, stage, to_translate=False, domestic_only=False):
     """
     stage: specify which of the two stages are the data generated for
     to_translate: whether to translated covid terms to respective sars terms
@@ -134,6 +139,9 @@ def gen_forecast_data(model_settings, stage, to_translate=False):
         ## import preprocessed data
         df_covid = pd.read_pickle(gen_data_path(model_settings, 'COVID_sentences.pickle'))
         df_covid_irrel = pd.read_pickle(gen_data_path(model_settings, 'COVID_irrel_sentences.pickle'))
+        if domestic_only:
+            df_covid = df_covid.loc[df_covid['foreign']==0]
+            df_covid_irrel = df_covid_irrel.loc[df_covid_irrel['foreign']==0]
 
         ## generate labels (binary on whether it's relevant)
         df_covid['label'] = 1
@@ -141,18 +149,30 @@ def gen_forecast_data(model_settings, stage, to_translate=False):
 
         ## translate covid terms to sars terms, if called for
         df_covid = translate_terms(df_covid, to_translate=to_translate)
+        df_covid_irrel = translate_terms(df_covid_irrel, to_translate=to_translate)
 
         return df_covid, df_covid_irrel
 
     elif stage==2:
-        ## import stage-1 results as data
-        df_covid = pd.read_pickle(gen_model_path(model_settings, 'stage_1_results_forecast.pickle'))
-        # df_covid_irrel = pd.read_pickle(gen_model_path(model_settings, 'stage_1_results_placebo.pickle'))
+        if not to_translate:
+            ## import stage-1 results as data
+            df_covid = pd.read_pickle(gen_model_path(model_settings, 'stage_1_results_forecast.pickle'))
+            # df_covid_irrel = pd.read_pickle(gen_model_path(model_settings, 'stage_1_results_placebo.pickle'))
 
-        ## only take data with stage-1 pred = 1
-        df_covid = df_covid[df_covid['pred']==1]
-        # df_covid_irrel = df_covid_irrel[df_covid_irrel['pred']==1]
-        return df_covid, None 
+            ## only take data with stage-1 pred = 1
+            df_covid = df_covid[df_covid['pred']==1]
+            # df_covid_irrel = df_covid_irrel[df_covid_irrel['pred']==1]
+            return df_covid, None
+
+        else:
+            ## import stage-1 results as data
+            df_covid = pd.read_pickle(gen_model_path(model_settings, 'stage_1_results_forecast_translated.pickle'))
+            # df_covid_irrel = pd.read_pickle(gen_model_path(model_settings, 'stage_1_results_placebo_translated.pickle'))
+
+            ## only take data with stage-1 pred = 1
+            df_covid = df_covid[df_covid['pred']==1]
+            # df_covid_irrel = df_covid_irrel[df_covid_irrel['pred']==1]
+            return df_covid, None 
 
     print("Generated forecast data.")
 
@@ -532,7 +552,7 @@ def assess_training(model_settings, stage, df_train, df_test):
         get_predictions(stage, model, device, testloader, evaluate=True)
 
 
-def calc_results(model_settings, stage, model, device, df, fname):
+def calc_results(model_settings, stage, model, device, df, fname, to_translate=False):
     """
     stage: specify which of the two stages to calculate the results for
     """
@@ -545,16 +565,46 @@ def calc_results(model_settings, stage, model, device, df, fname):
     df['pred'] = pred.cpu().numpy()
     df_drop = df.drop(columns=['sentence'])
 
-    if stage==1:
-        pd.DataFrame(confusion_matrix(df['label'], df['pred'])).to_excel(gen_model_path(model_settings,
-            'stage_'+str(stage)+'_matrix_'+fname+".xlsx"))
-        df.to_pickle(gen_model_path(model_settings,
-            'stage_'+str(stage)+'_results_'+fname+'.pickle'))
+    if not to_translate:
+        if stage==1:
+            pd.DataFrame(confusion_matrix(df['label'], df['pred'])).to_excel(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_matrix_'+fname+".xlsx"))
+            df.to_pickle(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_results_'+fname+'.pickle'))
 
-    elif stage==2:
-        df_drop.to_excel(gen_model_path(model_settings,
-            'stage_'+str(stage)+'_results_'+fname+'.xlsx'))
-        df.to_pickle(gen_model_path(model_settings,
-            'stage_'+str(stage)+'_results_'+fname+'.pickle'))
+        elif stage==2:
+            df_drop.to_excel(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_results_'+fname+'.xlsx'))
+            df.to_pickle(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_results_'+fname+'.pickle'))
+
+    else:
+        if stage==1:
+            pd.DataFrame(confusion_matrix(df['label'], df['pred'])).to_excel(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_matrix_'+fname+"_translated.xlsx"))
+            df.to_pickle(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_results_'+fname+'_translated.pickle'))
+
+        elif stage==2:
+            df_drop.to_excel(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_results_'+fname+'_translated.xlsx'))
+            df.to_pickle(gen_model_path(model_settings,
+                'stage_'+str(stage)+'_results_'+fname+'_translated.pickle'))
         
     return df
+
+def extract_articles(model_settings, slct_date, kword=None):
+    # subset the results data by the selected date
+    df = pd.read_pickle(gen_model_path(model_settings, 'stage_2_results_forecast.pickle'))
+    msk = (df['date']==slct_date)
+    slct_df = df.loc[msk]
+
+    # subset the sentences in slct_df that are closest to the mean of pred
+    if kword!=None:
+        slct_sent = slct_df.loc[((np.abs(np.mean(slct_df['pred'])-slct_df['pred'])<=3) & (slct_df['sentence'].str.contains(kword, regex=False)))]
+    else:
+        slct_sent = slct_df.loc[np.abs(np.mean(slct_df['pred'])-slct_df['pred'])<=3]
+
+    # select the article most representative of slct_sent
+    slct_art = slct_df.loc[slct_df['article_id']==slct_sent['article_id'].mode()[0]]
+    slct_art.to_excel(gen_model_path(model_settings, 'stage_2_slct_art_for_'+slct_date+'.xlsx'))

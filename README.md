@@ -12,16 +12,20 @@ External contributors:
 * Kit Lee;
 * Kawai Leung.
 
+Please email all comments/questions to weifeng.zhong [AT] policychangeindex.org
+
 
 What is the Policy Change Index for Outbreak (PCI-Outbreak)?
 -----------------------------------------------
-How severe was the COVID-19 outbreak in China, really? It is widely suspected that its official numbers understate the extent of the outbreak, and even the official numbers themselves are incoherent. On February 13, 2020, the Chinese authorities confirmed over 15 thousand new cases in the country, 40 times the previous day's number, due to a change in counting criteria. On April 17, they revised the death toll for Wuhan, the epicenter, upward by 50%, citing various omissions previously.
+How severe was COVID-19 in China, really? It is widely suspected that the country's official numbers of diagnosed cases understate the extent of the outbreak, and even the official statistics themselves are incoherent. On February 13, 2020, the Chinese authorities confirmed more than 15,000 new cases nationwide---40 times the previous day's number---because of a change in counting criteria. Just two months after that, they revised the death toll for the city of Wuhan, the epicenter, upward by 50 percent, citing unspecified omissions.
 
-The PCI-Outbreak uses a machine learning method to gauge the true scale of COVID-19 in China, not through its official numbers but through how its state-controlled media covered the outbreak. The algorithm is trained on SARS-era articles in the *People's Daily*, the official newspaper of the Communist Party of China, to understand the wax and wane of the narrative as the epidemic cycle evolved. The algorithm then assesses future outbreaks' severity against the SARS benchmark.
+The PCI-Outbreak uses a deep learning method to measure the severity of COVID-19 in China, not through the Chinese government's official numbers but through how state-controlled media talked about the outbreak. The algorithm is trained on SARS-episode articles in the *People's Daily*, the official newspaper of the Communist Party of China, to understand the tone and tenor of the SARS-episode narrative as the epidemic cycle evolved. The algorithm then assesses future outbreaks' severity against the SARS benchmark.
 
-The PCI-Outbreak is built on the idea that words can be more accurate than (some) numbers. While it may be trivial to release false statistics outright, it is more difficult to conceal the truth when the government has to address a public health crisis at length in national media. Take the beginning of COVID-19 for example: When the Chinese government announced the lockdown of Wuhan, a city with a population of 11 million people, and warned of a nationwide spread of the virus, the authorities had only confirmed fewer than 600 cases across the entire country. Changes in language, therefore, may provide us with a clearer picture of the severity than the questionable official numbers.
+The PCI-Outbreak is built on the idea that words can speak louder than (some) numbers. While it may be simple to release false statistics, it is more difficult to conceal the truth when the government has to address a crisis, such as a severe infectious disease, at length in the media. Take the beginning of COVID-19 for example: When the Chinese government announced a lockdown of Wuhan, a city with a population of 11 million, and its neighboring cities and discussed the necessity of doing so in state media, the Chinese authorities had confirmed a total of fewer than 600 cases of the novel coronavirus across the country. Therefore, changes in words during the outbreak may provide us with a clearer picture of the severity than official numbers do.
 
-For details about the methodology and findings of this project, please see our forthcoming research paper.
+For details about the methodology and findings of this project, please see the following research paper:
+
+- Chan, Julian TszKin, Kwan-Yuet Ho, Kit Lee, Kawai Leung, and Weifeng Zhong. 2020. "Words Speak Louder Than Numbers: Estimating China's COVID-19 Severity with Deep Learning"  [Mercatus Working Paper](https://www.mercatus.org/publications/covid-19-crisis-response/words-speak-louder-numbers) (latest version available [here](https://policychangeindex.org/pdf/Words_Speak_Louder.pdf)).
 
 
 Disclaimer
@@ -45,4 +49,6 @@ Citing the Policy Change Index for Outbreak (PCI-Outbreak)
 
 Please cite the source of the latest Policy Change Index for Outbreak (PCI-Outbreak) by the website: https://policychangeindex.org.
 
-For academic work, please see our forthcoming research paper and cite it when it is available.
+For academic work, please cite the following research paper:
+
+- Chan, Julian TszKin, Kwan-Yuet Ho, Kit Lee, Kawai Leung, and Weifeng Zhong. 2020. "Words Speak Louder Than Numbers: Estimating China's COVID-19 Severity with Deep Learning"  [Mercatus Working Paper](https://www.mercatus.org/publications/covid-19-crisis-response/words-speak-louder-numbers) (latest version available [here](https://policychangeindex.org/pdf/Words_Speak_Louder.pdf)).

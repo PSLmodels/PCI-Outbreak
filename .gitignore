@@ -133,6 +133,7 @@ data/**/*.pickle
 
 models/**/*.tar
 models/**/*.pickle
+models/**/*slct_art*.xlsx
 
 # R
 .Rproj.user
